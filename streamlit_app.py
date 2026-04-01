@@ -1,67 +1,139 @@
 import streamlit as st
 from openai import OpenAI
 import requests
+import base64
 
-# Show title and description.
-st.title("MY Document question answering")
-st.write(
-    "Upload a document below and ask a question about it – GPT will answer! "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-)
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-    
-    try:
-        rq = requests.get("https://api.openai.com/v1/models", 
-                          headers={"Authorization": f"Bearer {openai_api_key}"}, 
-                          timeout=5)
-        
-        if rq.status_code != 200:
-            st.error("Invalid API key.")
-            st.stop()
-        
-        else: 
-            
-            # Create an OpenAI client.
-            client = OpenAI(api_key=openai_api_key)
+# title and description
+st.title("Song Recommendation Bot")
+st.write("Test different api calls with text, images, and audio")
+st.write(" ")
 
-            # Let the user upload a file via `st.file_uploader`.
-            uploaded_file = st.file_uploader(
-                "Upload a document (.txt or .md)", type=("txt", "md")
-            )
+# initialize session state
+if "text_response" not in st.session_state:
+    st.session_state.text_response = None
 
-            # Ask the user for a question via `st.text_area`.
-            question = st.text_area(
-                "Now ask a question about the document!",
-                placeholder="Can you give me a short summary?",
-                disabled=not uploaded_file,
-            )
+if "url_response" not in st.session_state:
+    st.session_state.url_response = None
 
-            if uploaded_file and question:
+if "uploaded_response" not in st.session_state:
+    st.session_state.uploaded_response = None
 
-                # Process the uploaded file and question.
-                document = uploaded_file.read().decode()
-                messages = [
-                    {
-                        "role": "user",
-                        "content": f"Here's a document: {document} \n\n---\n\n {question}",
-                    }
-                ]
+if "audio_response" not in st.session_state:
+    st.session_state.audio_response = None
 
-                # Generate an answer using the OpenAI API.
-                stream = client.chat.completions.create(
-                    model="gpt-5-nano",
-                    messages=messages,
-                    stream=True,
-                )
+st.subheader("Text Only Input")
+st.write("Click the button for a random song recommendation")
 
-                # Stream the response to the app using `st.write_stream`.
-                st.write_stream(stream)
-    except:
-        st.error("Could not validate API key.")
+# button for api call
+if st.button("Recommend me a song"):
+    text_response = client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=1024,
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user",   "content": "Recommend a random song- "
+            "avoid popular choices. Describe the artist and genre. "
+            "Provide one or two sentences on why you recommended this song. "
+            "Keep consistent formatting."}
+        ]
+    )
+    st.session_state.text_response = text_response.choices[0].message.content
+
+# -------
+
+# write response
+if st.session_state.text_response:
+    st.write(st.session_state.text_response)
+
+st.subheader("Image URL Input")
+st.write("Input an image url for a random song recommendation based off the analyzed vibe.")
+url = st.text_input("Image URL", value="https://i.pinimg.com/736x/2c/93/17/2c93174ec1297a1cc460491c99c70ca8.jpg")
+
+# button for api call
+if st.button("Analyze URL Image + Recommend Song"):
+    url_response = client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": url, "detail": "auto"}},
+                {"type": "text", "text": "Describe this image. Recommend a random song "
+                "to match the image's vibe-avoid popular choices. "
+                "Describe the artist and genre. "
+            "Provide one or two sentences on why you recommended this song. "
+            "Keep consistent formatting."}
+            ]
+        }]
+    )
+    st.session_state.url_response = url_response.choices[0].message.content
+
+# write response
+if st.session_state.url_response:
+    st.write(st.session_state.url_response)
+
+# -------
+
+st.subheader("Image Upload Input")
+st.write("Upload an image for a random song recommendation based off the analyzed vibe.")
+
+uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "webp", "gif"])
+
+if st.button("Analyze Uploaded Image +  Recommend Song") and uploaded:
+    b64 = base64.b64encode(uploaded.read()).decode("utf-8")
+    mime = uploaded.type  # e.g. "image/png"
+    data_uri = f"data:{mime};base64,{b64}"
+
+    uploaded_response = client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": data_uri, "detail": "high"}},
+                {"type": "text", "text": "Describe this image. Recommend a random song to match the image's vibe- " \
+            "avoid popular choices. Describe the artist and genre. "
+            "Provide one or two sentences on why you recommended this song. "
+            "Keep consistent formatting."}
+            ]
+        }]
+    )
+    st.session_state.uploaded_response = uploaded_response.choices[0].message.content
+
+# write response
+if st.session_state.uploaded_response:
+    st.write(st.session_state.uploaded_response)
+
+# -----
+
+st.subheader("Audio Input")
+st.write("Input an audio file and have the bot describe it's vibe and provide similar song recommendations.")
+
+uploaded_audio = st.file_uploader("Upload an audio file", type=["wav", "mp3"])
+
+if st.button("Analyze Uploaded Audio + Recommend Song") and uploaded_audio:
+    uploaded_audio.seek(0)  # reset pointer before reading
+    audio_b64 = base64.b64encode(uploaded_audio.read()).decode("utf-8")
+    fmt = "mp3" if uploaded_audio.type == "audio/mpeg" else "wav"
+
+    audio_response = client.chat.completions.create(
+        model="gpt-4o-audio-preview",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "input_audio", "input_audio": {"data": audio_b64, "format": fmt}},
+                {"type": "text", "text": "Describe what you hear in this audio. Recommend a random song to match. "
+                 "Avoid popular choices. Describe the artist and genre. "
+                 "Provide one or two sentences on why you recommended this song. "
+                 "Keep consistent formatting."}
+            ]
+        }]
+    )
+    st.session_state.audio_response = audio_response.choices[0].message.content
+
+# write response
+if st.session_state.audio_response:
+    st.write(st.session_state.audio_response)
